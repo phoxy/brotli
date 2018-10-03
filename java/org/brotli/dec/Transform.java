@@ -46,12 +46,12 @@ final class Transform {
       this.triplets = new int[numTransforms * 3];
       this.params = new short[numTransforms];
       this.prefixSuffixStorage = new byte[prefixSuffixLen];
-      this.prefixSuffixHeads = new int[prefixSuffixCount];
+      this.prefixSuffixHeads = new int[prefixSuffixCount + 1];
     }
   }
 
   static final int NUM_RFC_TRANSFORMS = 121;
-  static final Transforms RFC_TRANSFORMS = new Transforms(NUM_RFC_TRANSFORMS, 217, 51);
+  static final Transforms RFC_TRANSFORMS = new Transforms(NUM_RFC_TRANSFORMS, 167, 50);
 
   private static final int OMIT_FIRST_LAST_LIMIT = 9;
 
@@ -78,12 +78,13 @@ final class Transform {
       int[] prefixSuffixHeads, int[] transforms, String prefixSuffixSrc, String transformsSrc) {
     int n = prefixSuffixSrc.length();
     int index = 1;
+    int j = 0;
     for (int i = 0; i < n; ++i) {
       char c = prefixSuffixSrc.charAt(i);
-      prefixSuffix[i] = (byte) c;
       if (c == 35) { // == #
-        prefixSuffixHeads[index++] = i + 1;
-        prefixSuffix[i] = 0;
+        prefixSuffixHeads[index++] = j;
+      } else {
+        prefixSuffix[j++] = (byte) c;
       }
     }
 
@@ -102,29 +103,37 @@ final class Transform {
     int offset = dstOffset;
     int[] triplets = transforms.triplets;
     byte[] prefixSuffixStorage = transforms.prefixSuffixStorage;
+    int[] prefixSuffixHeads = transforms.prefixSuffixHeads;
     int transformOffset = 3 * transformIndex;
-    int transformPrefix = transforms.prefixSuffixHeads[triplets[transformOffset]];
+    int prefixIdx = triplets[transformOffset];
     int transformType = triplets[transformOffset + 1];
-    int transformSuffix = transforms.prefixSuffixHeads[triplets[transformOffset + 2]];
+    int suffixIdx = triplets[transformOffset + 2];
+    int prefix = prefixSuffixHeads[prefixIdx];
+    int prefixEnd = prefixSuffixHeads[prefixIdx + 1];
+    int suffix = prefixSuffixHeads[suffixIdx];
+    int suffixEnd = prefixSuffixHeads[suffixIdx + 1];
 
-    boolean isOmitFirst =
-        transformType > OMIT_FIRST_BASE && transformType <= OMIT_FIRST_BASE + OMIT_FIRST_LAST_LIMIT;
-    boolean isOmitLast =
-        transformType > OMIT_LAST_BASE && transformType <= OMIT_LAST_BASE + OMIT_FIRST_LAST_LIMIT;
+    int omitFirst = transformType - OMIT_FIRST_BASE;
+    int omitLast = transformType - OMIT_LAST_BASE;
+    if (omitFirst < 1 || omitFirst > OMIT_FIRST_LAST_LIMIT) {
+      omitFirst = 0;
+    }
+    if (omitLast < 1 || omitLast > OMIT_FIRST_LAST_LIMIT) {
+      omitLast = 0;
+    }
 
     // Copy prefix.
-    while (prefixSuffixStorage[transformPrefix] != 0) {
-      dst[offset++] = prefixSuffixStorage[transformPrefix++];
+    while (prefix != prefixEnd) {
+      dst[offset++] = prefixSuffixStorage[prefix++];
     }
 
     // Copy trimmed word.
-    int omitFirst = isOmitFirst ? (transformType - OMIT_FIRST_BASE) : 0;
     if (omitFirst > len) {
       omitFirst = len;
     }
     srcOffset += omitFirst;
     len -= omitFirst;
-    len -= isOmitLast ? (transformType - OMIT_LAST_BASE) : 0;
+    len -= omitLast;
     int i = len;
     while (i > 0) {
       dst[offset++] = src.get(srcOffset++);
@@ -218,8 +227,8 @@ final class Transform {
     }
 
     // Copy suffix.
-    while (prefixSuffixStorage[transformSuffix] != 0) {
-      dst[offset++] = prefixSuffixStorage[transformSuffix++];
+    while (suffix != suffixEnd) {
+      dst[offset++] = prefixSuffixStorage[suffix++];
     }
 
     return offset - dstOffset;

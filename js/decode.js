@@ -938,10 +938,7 @@ function BrotliDecodeClosure() {
           var /** !number */ dstEnd = dst + copyLength;
           if ((srcEnd < ringBufferMask) && (dstEnd < ringBufferMask)) {
             if (copyLength < 12 || (srcEnd > dst && dstEnd > src)) {
-              for (var /** !number */ k = 0; k < copyLength; k += 4) {
-                ringBuffer[dst++] = ringBuffer[src++];
-                ringBuffer[dst++] = ringBuffer[src++];
-                ringBuffer[dst++] = ringBuffer[src++];
+              for (var /** !number */ k = 0; k < copyLength; ++k) {
                 ringBuffer[dst++] = ringBuffer[src++];
               }
             } else {
@@ -1064,10 +1061,10 @@ function BrotliDecodeClosure() {
     this.triplets = new Int32Array(numTransforms * 3);
     this.params = new Int16Array(numTransforms);
     this.prefixSuffixStorage = new Int8Array(prefixSuffixLen);
-    this.prefixSuffixHeads = new Int32Array(prefixSuffixCount);
+    this.prefixSuffixHeads = new Int32Array(prefixSuffixCount + 1);
   }
 
-  var RFC_TRANSFORMS = new Transforms(121, 217, 51);
+  var RFC_TRANSFORMS = new Transforms(121, 167, 50);
   /**
    * @param {!Int8Array} prefixSuffix
    * @param {!Int32Array} prefixSuffixHeads
@@ -1079,12 +1076,13 @@ function BrotliDecodeClosure() {
   function unpackTransforms(prefixSuffix, prefixSuffixHeads, transforms, prefixSuffixSrc, transformsSrc) {
     var /** !number */ n = prefixSuffixSrc.length;
     var /** !number */ index = 1;
+    var /** !number */ j = 0;
     for (var /** !number */ i = 0; i < n; ++i) {
       var /** !number */ c = prefixSuffixSrc.charCodeAt(i);
-      prefixSuffix[i] = c;
       if (c == 35) {
-        prefixSuffixHeads[index++] = i + 1;
-        prefixSuffix[i] = 0;
+        prefixSuffixHeads[index++] = j;
+      } else {
+        prefixSuffix[j++] = c;
       }
     }
     for (var /** !number */ i = 0; i < 363; ++i) {
@@ -1108,22 +1106,32 @@ function BrotliDecodeClosure() {
     var /** !number */ offset = dstOffset;
     var /** !Int32Array */ triplets = transforms.triplets;
     var /** !Int8Array */ prefixSuffixStorage = transforms.prefixSuffixStorage;
+    var /** !Int32Array */ prefixSuffixHeads = transforms.prefixSuffixHeads;
     var /** !number */ transformOffset = 3 * transformIndex;
-    var /** !number */ transformPrefix = transforms.prefixSuffixHeads[triplets[transformOffset]];
+    var /** !number */ prefixIdx = triplets[transformOffset];
     var /** !number */ transformType = triplets[transformOffset + 1];
-    var /** !number */ transformSuffix = transforms.prefixSuffixHeads[triplets[transformOffset + 2]];
-    var /** !number */ isOmitFirst = transformType > 11 && transformType <= 20;
-    var /** !number */ isOmitLast = transformType > 0 && transformType <= 9;
-    while (prefixSuffixStorage[transformPrefix] != 0) {
-      dst[offset++] = prefixSuffixStorage[transformPrefix++];
+    var /** !number */ suffixIdx = triplets[transformOffset + 2];
+    var /** !number */ prefix = prefixSuffixHeads[prefixIdx];
+    var /** !number */ prefixEnd = prefixSuffixHeads[prefixIdx + 1];
+    var /** !number */ suffix = prefixSuffixHeads[suffixIdx];
+    var /** !number */ suffixEnd = prefixSuffixHeads[suffixIdx + 1];
+    var /** !number */ omitFirst = transformType - 11;
+    var /** !number */ omitLast = transformType - 0;
+    if (omitFirst < 1 || omitFirst > 9) {
+      omitFirst = 0;
     }
-    var /** !number */ omitFirst = isOmitFirst ? (transformType - 11) : 0;
+    if (omitLast < 1 || omitLast > 9) {
+      omitLast = 0;
+    }
+    while (prefix != prefixEnd) {
+      dst[offset++] = prefixSuffixStorage[prefix++];
+    }
     if (omitFirst > len) {
       omitFirst = len;
     }
     srcOffset += omitFirst;
     len -= omitFirst;
-    len -= isOmitLast ? (transformType - 0) : 0;
+    len -= omitLast;
     var /** !number */ i = len;
     while (i > 0) {
       dst[offset++] = src[srcOffset++];
@@ -1207,8 +1215,8 @@ function BrotliDecodeClosure() {
         }
       }
     }
-    while (prefixSuffixStorage[transformSuffix] != 0) {
-      dst[offset++] = prefixSuffixStorage[transformSuffix++];
+    while (suffix != suffixEnd) {
+      dst[offset++] = prefixSuffixStorage[suffix++];
     }
     return offset - dstOffset;
   }
